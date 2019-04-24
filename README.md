@@ -14,4 +14,8 @@ $ ./go_danger_funcs.py /mnt/c/Projects/foo
 /tmp/tmpbbatsm8u/http_redir.txt
 /tmp/tmpbbatsm8u/http_cookie.txt
 /tmp/tmpbbatsm8u/http_client.txt
+$ cat /tmp/tmpbbatsm8u/code_exec.txt
+/mnt/c/Projects/foo/bar.go [19,8]:
+        cmd := exec.Command(sysctl, "-n", foo)
+...
 ```
