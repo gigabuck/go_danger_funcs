@@ -1,6 +1,11 @@
 #!/usr/bin/python3
 
-import os, sys, glob, tempfile
+import os
+import sys
+import glob
+import tempfile
+import sqlite3
+import base64
 
 if len (sys.argv) != 2:
     print("Usage: go_dangerous_funcs.py [source_directory]")
@@ -78,13 +83,21 @@ if not ( search_path.endswith("/") or search_path.endswith('\\') ):
 
 search_path_glob = search_path + file_type_glob
 temp_dir = tempfile.mkdtemp()
+sqlite_results_file = temp_dir + "/results.sqlite"
+print(sqlite_results_file)
+conn = sqlite3.connect(sqlite_results_file)
+c = conn.cursor()
+
 print("## Results:")
+
 
 # Main
 for policy in search_policy:
     results_file = temp_dir + "/" + policy["name"] + ".txt"
+    sql = "CREATE TABLE " + policy["name"] + " (desc TEXT NOT NULL,pattern TEXT NOT NULL,fname TEXT NOT NULL,line_no INT NOT NULL,col INT NOT NULL,line BLOB NOT NULL)"
+    c.execute(sql)
     print(results_file)
-    f = open(results_file, "a") 
+    f = open(results_file, "a")
     for search_str in policy["patterns"]:
         for fname in glob.iglob(search_path_glob, recursive=True):
             fo = open(fname)
@@ -97,8 +110,14 @@ for policy in search_policy:
                     f.write(file_lineno)
                     lineout = line + "\n\n"
                     f.write(lineout)
+                    encoded_line = base64.b64encode(line.encode("utf-8"))
+                    print(encoded_line)
+                    sql = "INSERT OR IGNORE INTO " + policy["name"] + " (desc,pattern,fname,line_no,col,line) VALUES(?,?,?,?,?,?)"
+                    args = (policy["desc"],search_str,fname,line_no,index,encoded_line)
+                    c.execute(sql,args)
                 line = fo.readline()
                 line_no += 1
             fo.close()
     f.close()
-
+conn.commit()
+conn.close()
