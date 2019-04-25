@@ -84,12 +84,11 @@ if not ( search_path.endswith("/") or search_path.endswith('\\') ):
 search_path_glob = search_path + file_type_glob
 temp_dir = tempfile.mkdtemp()
 sqlite_results_file = temp_dir + "/results.sqlite"
-print(sqlite_results_file)
 conn = sqlite3.connect(sqlite_results_file)
 c = conn.cursor()
 
 print("## Results:")
-
+print(sqlite_results_file)
 
 # Main
 for policy in search_policy:
