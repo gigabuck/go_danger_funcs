@@ -7,12 +7,15 @@ import tempfile
 import sqlite3
 import base64
 
-if len (sys.argv) != 2:
-    print("Usage: go_dangerous_funcs.py [source_directory]")
+if len (sys.argv) != 3:
+    print("Usage: go_dangerous_funcs.py [source_directory] [vendor_include]")
     sys.exit(1)
 
 search_path = sys.argv[1]
 file_type_glob= "**/*.go"
+
+# include specific 3rd party libs
+vendor_include = sys.argv[2]
 
 file_input = {
     "name":		"file_input",
@@ -86,37 +89,48 @@ temp_dir = tempfile.mkdtemp()
 sqlite_results_file = temp_dir + "/results.sqlite"
 conn = sqlite3.connect(sqlite_results_file)
 c = conn.cursor()
+sqlfile = open('results_schema.sql', 'r')
+sql = sqlfile.read()
+sqlfile.close()
+c.executescript(sql)
 
-print("## Results:")
+print("## Results are at:")
 print(sqlite_results_file)
 
+finding_no = 0
+
 # Main
-for policy in search_policy:
-    results_file = temp_dir + "/" + policy["name"] + ".txt"
-    sql = "CREATE TABLE " + policy["name"] + " (desc TEXT NOT NULL,pattern TEXT NOT NULL,fname TEXT NOT NULL,line_no INT NOT NULL,col INT NOT NULL,line BLOB NOT NULL)"
-    c.execute(sql)
-    print(results_file)
-    f = open(results_file, "a")
-    for search_str in policy["patterns"]:
-        for fname in glob.iglob(search_path_glob, recursive=True):
-            fo = open(fname)
-            line = fo.readline()
-            line_no = 1
-            while line != '' :
+for fname in glob.iglob(search_path_glob, recursive=True):
+    # filter out 3rd party libs
+    if "/vendor/" in fname and vendor_include not in fname:
+        continue
+    fo = open(fname)
+    line = fo.readline()
+    line_no = 1
+    last_file_lineno = ""
+    while line != '' :
+        for policy in search_policy:
+            for search_str in policy["patterns"]:
                 index = line.find(search_str)
                 if (index != -1):
-                    file_lineno = fname + " [" + str(line_no) + "," + str(index) + "]:\n"
-                    f.write(file_lineno)
+                    file_lineno = fname + " [" + str(line_no) + "," + str(index) + "]:"
+                    # only print file and line num on first match for that line
+                    if last_file_lineno != file_lineno:
+                        print(file_lineno)
+                        finding_no += 1
+                    last_file_lineno = file_lineno
                     lineout = line + "\n\n"
-                    f.write(lineout)
+                    print("search_policy: " + policy["name"])
+                    print("search_string: " + search_str)
+                    print(lineout)
                     encoded_line = base64.b64encode(line.encode("utf-8"))
-                    print(encoded_line)
-                    sql = "INSERT OR IGNORE INTO " + policy["name"] + " (desc,pattern,fname,line_no,col,line) VALUES(?,?,?,?,?,?)"
-                    args = (policy["desc"],search_str,fname,line_no,index,encoded_line)
-                    c.execute(sql,args)
-                line = fo.readline()
-                line_no += 1
-            fo.close()
-    f.close()
+                    # ToDo: Add INSERTs for new schema
+                    #sql = "INSERT OR IGNORE INTO " + policy["name"] + " (desc,pattern,fname,line_no,col,line) VALUES(?,?,?,?,?,?)"
+                    #args = (policy["desc"],search_str,fname,line_no,index,encoded_line)
+                    #c.execute(sql,args)
+        line = fo.readline()
+        line_no += 1
+    fo.close()
 conn.commit()
 conn.close()
+#print("# of findings: " + str(finding_no))
