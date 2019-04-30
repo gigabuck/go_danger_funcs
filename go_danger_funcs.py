@@ -78,7 +78,38 @@ http_client = {
     "patterns":		['http.Client','http.Do','http.Head','http.Get','http.Post','http.PostForm']
 }
 
-search_policy = [file_input,file_perm,file_output,path_manip,code_exec,http_svr_config,http_tls_config,http_redir,http_cookie,http_client]
+api_endpoint = {
+    "name":		"api_endpoint",
+    "desc":		"Potential API Endpoint",
+    "patterns":		['/api/']
+}
+
+socket = {
+    "name":		"socket",
+    "desc":		"Potential Socket Connection",
+    "patterns":		['net.Conn']
+}
+
+crypto = {
+    "name":		"crypto",
+    "desc":		"Potentially Dangerous Cryptographic Implementation",
+    "patterns":		['pbkdf2.Key','aes.','cipher.','des.','dsa.','ecdsa.','elliptic.','hmac.','md5.','rand.','rc4.','rsa.','sha1.','sha265.','sha512.','tls.','x509.']
+}
+
+zip = {
+    "name":		"zip",
+    "desc":		"Potential Dangerous Use of Compression/Decompression",
+    "patterns":		['zip.OpenReader','zip.NewWriter','zip.FileInfo']
+}
+
+xml = {
+    "name":		"xml",
+    "desc":		"Potentially Dangerous XML Processing",
+    "patterns":		['xml.UnMarshal']
+}
+
+
+search_policy = [file_input,file_perm,file_output,path_manip,code_exec,http_svr_config,http_tls_config,http_redir,http_cookie,http_client,api_endpoint,socket,crypto,zip,xml]
 
 # Normalize trailing path separator
 if not ( search_path.endswith("/") or search_path.endswith('\\') ):
@@ -86,48 +117,68 @@ if not ( search_path.endswith("/") or search_path.endswith('\\') ):
 
 search_path_glob = search_path + file_type_glob
 temp_dir = tempfile.mkdtemp()
-sqlite_results_file = temp_dir + "/results.sqlite"
-conn = sqlite3.connect(sqlite_results_file)
-c = conn.cursor()
-sqlfile = open('results_schema.sql', 'r')
-sql = sqlfile.read()
-sqlfile.close()
-c.executescript(sql)
 
-print("## Results are at:")
-print(sqlite_results_file)
+# TODO: Log results to sqlite file
+#sqlite_results_file = temp_dir + "/results.sqlite"
+#conn = sqlite3.connect(sqlite_results_file)
+#c = conn.cursor()
+#sqlfile = open('results_schema.sql', 'r')
+#sql = sqlfile.read()
+#sqlfile.close()
+#c.executescript(sql)
+#print("## Results are at:")
+#print(sqlite_results_file)
 
 finding_no = 0
 
 # Main
 for fname in glob.iglob(search_path_glob, recursive=True):
-    # filter out 3rd party libs
+    # filter out test code
+    if "testing.go" in fname or "/test" in fname or "_test.go" in fname:
+        continue
+
+    # filter out developer tools/scripts
+    if "/dev-tools/" in fname:
+        continue
+
+    # filter out 3rd party libs with "exceptions"
     if "/vendor/" in fname and vendor_include not in fname:
         continue
+
     fo = open(fname)
     line = fo.readline()
     line_no = 1
-    last_file_lineno = ""
+    last_fname = ""
+    last_index_lineno = ""
     while line != '' :
-        for policy in search_policy:
-            for search_str in policy["patterns"]:
-                index = line.find(search_str)
-                if (index != -1):
-                    file_lineno = fname + " [" + str(line_no) + "," + str(index) + "]:"
-                    # only print file and line num on first match for that line
-                    if last_file_lineno != file_lineno:
-                        print(file_lineno)
-                        finding_no += 1
-                    last_file_lineno = file_lineno
-                    lineout = line + "\n\n"
-                    print("search_policy: " + policy["name"])
-                    print("search_string: " + search_str)
-                    print(lineout)
-                    encoded_line = base64.b64encode(line.encode("utf-8"))
-                    # ToDo: Add INSERTs for new schema
-                    #sql = "INSERT OR IGNORE INTO " + policy["name"] + " (desc,pattern,fname,line_no,col,line) VALUES(?,?,?,?,?,?)"
-                    #args = (policy["desc"],search_str,fname,line_no,index,encoded_line)
-                    #c.execute(sql,args)
+        # skip over comment lines
+        if "// " not in line:
+            for policy in search_policy:
+                for search_str in policy["patterns"]:
+                    index = line.find(search_str)
+                    if (index != -1):
+
+                        # only print filename on first iteration
+                        if last_fname != fname:
+                            print(os.path.relpath(fname, search_path) + ":")
+                            finding_no += 1
+                        last_fname = fname
+
+                        # only print line,column,search policy, and code line on first iteration 
+                        index_lineno = "    [" + str(line_no) + "," + str(index) + "]"
+                        lineout = line + "\n\n"
+                        if last_index_lineno != index_lineno:
+                            print("    line, col: " + index_lineno) 
+                            print("    search_policy: " + policy["name"])
+                            print("    search_string: " + search_str)
+                            print("    " + lineout)
+                        last_index_lineno = index_lineno
+
+                        # ToDo: Add INSERTs for new SQL schema
+                        #encoded_line = base64.b64encode(line.encode("utf-8"))
+                        #sql = "INSERT OR IGNORE INTO " + policy["name"] + " (desc,pattern,fname,line_no,col,line) VALUES(?,?,?,?,?,?)"
+                        #args = (policy["desc"],search_str,fname,line_no,index,encoded_line)
+                        #c.execute(sql,args)
         line = fo.readline()
         line_no += 1
     fo.close()
